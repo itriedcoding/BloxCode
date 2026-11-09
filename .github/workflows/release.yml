@@ -1,0 +1,75 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Build Windows executable
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: windows-release
+
+      - name: Test core engine
+        run: cargo test -p bloxcode-core
+
+      - name: Build release executable
+        run: cargo build --release -p bloxcode-app
+
+      - name: UI smoke test
+        run: ./target/release/bloxcode.exe --smoke-ui
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item target/release/bloxcode.exe dist/BloxCode.exe
+          $hash = (Get-FileHash dist/BloxCode.exe -Algorithm SHA256).Hash.ToLower()
+          Set-Content -Path dist/BloxCode.exe.sha256 -Value "$hash  BloxCode.exe" -Encoding ascii
+          Get-Item dist/BloxCode.exe | Select-Object Name, Length
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.1.0
+          name: BloxCode 0.1.0
+          generate_release_notes: false
+          body: |
+            BloxCode is a Windows desktop app for building complete Roblox games with AI.
+
+            **Highlights**
+            - Two-pass generation: a validated game blueprint, then Luau sources written in batches
+            - Full project on disk: Rojo tree, shared modules, server authority, client UI
+            - Live Roblox Studio sync through a loopback bridge and plugin
+            - Iterate on a game with plain-language change requests
+            - Optional `rojo build` to produce a `.rbxlx` place file
+
+            **Install**
+            1. Download `BloxCode.exe` below (portable, no installer).
+            2. Windows SmartScreen may warn because the binary is unsigned: More info -> Run anyway.
+            3. Add your Vly deployment token in Settings, then install the Studio plugin from the Studio screen.
+
+            **Requires** Windows 10/11 x64 and a Vly deployment token. Roblox Studio is needed for live sync; Rojo is optional.
+
+            Verify the download with `BloxCode.exe.sha256`.
+          files: |
+            dist/BloxCode.exe
+            dist/BloxCode.exe.sha256
