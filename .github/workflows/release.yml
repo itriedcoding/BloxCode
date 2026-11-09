@@ -29,7 +29,16 @@ jobs:
           key: windows-release
 
       - name: Test core engine
-        run: cargo test -p bloxcode-core
+        shell: pwsh
+        run: |
+          cargo test -p bloxcode-core 2>&1 | Tee-Object -FilePath core-tests.log
+          if ($LASTEXITCODE -ne 0) {
+            Get-Content core-tests.log |
+              Where-Object { $_ -match '^---- |FAILED|panicked at|assertion|left:|right:' } |
+              Select-Object -Last 25 |
+              ForEach-Object { Write-Host "::error::$_" }
+            exit 1
+          }
 
       - name: Build release executable
         run: cargo build --release -p bloxcode-app

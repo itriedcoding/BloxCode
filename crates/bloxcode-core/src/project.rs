@@ -273,15 +273,25 @@ fn collect_luau(base: &Path, dir: &Path, out: &mut Vec<String>) -> Result<()> {
 
 /// Reject anything that could escape the project directory.
 pub fn safe_path(dir: &Path, relative: &str) -> Result<PathBuf> {
-    if relative.trim().is_empty()
-        || relative.contains("..")
-        || relative.contains('\\')
-        || Path::new(relative).is_absolute()
-        || relative.contains(':')
-    {
+    use std::path::Component;
+
+    let trimmed = relative.trim();
+    let flat_segments = !trimmed.is_empty()
+        && !trimmed.contains("..")
+        && !trimmed.contains('\\')
+        && !trimmed.contains(':')
+        && trimmed
+            .split('/')
+            .all(|segment| !segment.is_empty() && segment != ".");
+    // A rooted path such as `/etc/passwd` is not `is_absolute()` on Windows, so
+    // inspect the components as well; only plain file-name segments are allowed.
+    let contained = Path::new(trimmed)
+        .components()
+        .all(|component| matches!(component, Component::Normal(_)));
+    if !flat_segments || !contained {
         bail!("unsafe project path `{relative}`");
     }
-    Ok(dir.join(relative))
+    Ok(dir.join(trimmed))
 }
 
 pub fn write_script(dir: &Path, relative: &str, content: &str) -> Result<()> {
@@ -434,9 +444,15 @@ mod tests {
         let base = Path::new("/tmp/project");
         assert!(safe_path(base, "../evil.luau").is_err());
         assert!(safe_path(base, "/etc/passwd").is_err());
+        assert!(safe_path(base, "//server/share/x.luau").is_err());
+        assert!(safe_path(base, "src//A.luau").is_err());
+        assert!(safe_path(base, "./src/A.luau").is_err());
         assert!(safe_path(base, "src\\shared\\A.luau").is_err());
         assert!(safe_path(base, "C:/Windows/x.luau").is_err());
-        assert!(safe_path(base, "src/shared/A.luau").is_ok());
+        assert_eq!(
+            safe_path(base, "src/shared/A.luau").unwrap(),
+            base.join("src").join("shared").join("A.luau")
+        );
     }
 
     #[test]
