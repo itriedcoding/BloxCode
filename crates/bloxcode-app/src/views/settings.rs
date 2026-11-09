@@ -1,5 +1,6 @@
 use eframe::egui::{self, Align, Layout};
 
+use bloxcode_core::ai::models::{self, ModelInfo};
 use bloxcode_core::config::{DEFAULT_BASE_URL, DEFAULT_MODEL, DEFAULT_PORT};
 use bloxcode_core::{paths, util};
 
@@ -82,8 +83,7 @@ fn vly_card(app: &mut App, ui: &mut egui::Ui) {
         });
         ui.add_space(10.0);
 
-        widgets::field_label(ui, "Model");
-        widgets::text_field(ui, &mut app.settings.model, DEFAULT_MODEL, false);
+        model_picker(app, ui);
         ui.add_space(10.0);
 
         widgets::field_label(ui, "Gateway base URL");
@@ -126,6 +126,128 @@ fn vly_card(app: &mut App, ui: &mut egui::Ui) {
             }
         }
     });
+}
+
+/// Editable model id plus a searchable browser over every text/coding model.
+fn model_picker(app: &mut App, ui: &mut egui::Ui) {
+    widgets::field_label(ui, "Model");
+    let loading = app.models_job.is_some();
+    ui.horizontal(|ui| {
+        let width = (ui.available_width() - 168.0).max(220.0);
+        widgets::text_field_width(ui, &mut app.settings.model, DEFAULT_MODEL, false, width);
+        let refresh = ui
+            .add_enabled_ui(!loading, |ui| {
+                widgets::button(ui, "Refresh models", ButtonKind::Ghost)
+            })
+            .inner
+            .clicked();
+        if refresh {
+            app.fetch_models();
+        }
+        if loading {
+            widgets::tiny(ui, "LOADING");
+        }
+    });
+    ui.add_space(6.0);
+    if let Some(note) = &app.models_note {
+        match note {
+            Ok(text) => widgets::inline_note(ui, true, text),
+            Err(error) => widgets::inline_note(ui, false, error),
+        }
+        ui.add_space(6.0);
+    }
+
+    widgets::field_label(ui, "Browse models");
+    widgets::text_field(
+        ui,
+        &mut app.model_search,
+        "Search all text and coding models…",
+        false,
+    );
+    ui.add_space(6.0);
+
+    let query = app.model_search.trim().to_ascii_lowercase();
+    let shown: Vec<ModelInfo> = if query.is_empty() {
+        let recommended: Vec<ModelInfo> = app
+            .models
+            .iter()
+            .filter(|model| models::is_recommended(&model.id))
+            .cloned()
+            .collect();
+        if recommended.is_empty() {
+            app.models.iter().take(24).cloned().collect()
+        } else {
+            recommended
+        }
+    } else {
+        app.models
+            .iter()
+            .filter(|model| model.matches(&query))
+            .take(80)
+            .cloned()
+            .collect()
+    };
+    let total = app.models.len();
+    ui.horizontal(|ui| {
+        widgets::tiny(ui, &format!("{total} MODELS"));
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            if query.is_empty() {
+                widgets::tiny(ui, "RECOMMENDED · TYPE TO SEARCH");
+            } else {
+                widgets::tiny(ui, &format!("{} MATCHES", shown.len()));
+            }
+        });
+    });
+    ui.add_space(4.0);
+
+    egui::ScrollArea::vertical()
+        .max_height(208.0)
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            if shown.is_empty() {
+                widgets::quiet_text(ui, "No models match this search.");
+            }
+            for model in &shown {
+                let selected = app.settings.model == model.id;
+                let (rect, response) = widgets::hover_row(ui, 30.0);
+                if selected {
+                    ui.painter().rect_filled(rect, egui::Rounding::ZERO, RAISED);
+                    ui.painter().rect_filled(
+                        egui::Rect::from_min_size(rect.left_top(), egui::vec2(2.0, rect.height())),
+                        egui::Rounding::ZERO,
+                        WHITE,
+                    );
+                }
+                let color = if selected { TEXT } else { MUTED };
+                let name = ui
+                    .painter()
+                    .layout_no_wrap(model.name.clone(), medium(11.5), color);
+                ui.painter().galley(
+                    egui::pos2(rect.left() + 12.0, rect.center().y - name.size().y * 0.5),
+                    name,
+                    color,
+                );
+                let id = ui
+                    .painter()
+                    .layout_no_wrap(model.id.clone(), mono(9.5), DIM);
+                ui.painter().galley(
+                    egui::pos2(
+                        rect.right() - 12.0 - id.size().x,
+                        rect.center().y - id.size().y * 0.5,
+                    ),
+                    id,
+                    DIM,
+                );
+                if response.clicked() {
+                    app.settings.model = model.id.clone();
+                }
+            }
+        });
+    ui.add_space(6.0);
+    widgets::note(
+        ui,
+        "Pick any model the gateway exposes, or type an exact id. Reasoning models retry without a custom temperature when the provider rejects it.",
+    );
 }
 
 fn bridge_card(app: &mut App, ui: &mut egui::Ui) {

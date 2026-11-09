@@ -65,6 +65,7 @@ jobs:
             BloxCode is a Windows desktop app for building complete Roblox games with AI.
 
             **Highlights**
+            - Every text and coding model from the Vly AI gateway, with a searchable picker and live model refresh
             - Two-pass generation: a validated game blueprint, then Luau sources written in batches
             - Full project on disk: Rojo tree, shared modules, server authority, client UI
             - Live Roblox Studio sync through a loopback bridge and plugin

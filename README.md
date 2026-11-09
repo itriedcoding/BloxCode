@@ -30,7 +30,9 @@ BloxCode talks to the Vly AI gateway (`https://integrations.vly.ai/v1/llm`), an 
 2. Open **Settings → Vly AI** and paste it into *Deployment token*.
 3. Press **Test connection**.
 
-The token is stored in `%APPDATA%\BloxCode\config.json` and is never written into generated projects. You can also set `VLY_INTEGRATION_KEY` in the environment to override the stored token. Model, base URL and temperature are configurable.
+The token is stored in `%APPDATA%\BloxCode\config.json` and is never written into generated projects. You can also set `VLY_INTEGRATION_KEY` in the environment to override the stored token.
+
+Every text and coding model the gateway exposes is available from **Settings → Model**: search the bundled catalogue, or press **Refresh models** to load the live list from your deployment so new models appear without an app update. Any exact model id can still be typed. Model, base URL and temperature are configurable; reasoning models automatically retry without a custom temperature when the provider rejects it.
 
 ## Roblox Studio
 

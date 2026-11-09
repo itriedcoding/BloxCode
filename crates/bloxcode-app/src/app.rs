@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
+use bloxcode_core::ai::models::ModelInfo;
 use bloxcode_core::ai::VlyClient;
 use bloxcode_core::bridge::{Bridge, BridgeStats};
 use bloxcode_core::config::Config;
@@ -180,6 +181,10 @@ pub struct App {
     pub token_visible: bool,
     pub connect_test: Option<Receiver<Result<String, String>>>,
     pub connect_result: Option<Result<String, String>>,
+    pub models: Vec<ModelInfo>,
+    pub model_search: String,
+    pub models_job: Option<Receiver<Result<Vec<ModelInfo>, String>>>,
+    pub models_note: Option<Result<String, String>>,
     pub build_job: Option<Receiver<Result<String, String>>>,
     pub build_result: Option<Result<String, String>>,
     pub status: String,
@@ -225,6 +230,10 @@ impl App {
             token_visible: false,
             connect_test: None,
             connect_result: None,
+            models: bloxcode_core::ai::models::bundled_models(),
+            model_search: String::new(),
+            models_job: None,
+            models_note: None,
             build_job: None,
             build_result: None,
             status: String::new(),
@@ -515,6 +524,25 @@ impl App {
         }
     }
 
+    /// Refresh the model catalogue from the deployment's `/models` endpoint.
+    /// The bundled list stays in place until the live request succeeds.
+    pub fn fetch_models(&mut self) {
+        if self.models_job.is_some() {
+            return;
+        }
+        let client = VlyClient::from_config(&self.settings);
+        if !client.has_token() {
+            self.models_note = Some(Err("Add your Vly deployment token first.".into()));
+            return;
+        }
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let _ = tx.send(client.list_models().map_err(|error| format!("{error:#}")));
+        });
+        self.models_job = Some(rx);
+        self.models_note = None;
+    }
+
     pub fn test_connection(&mut self) {
         let client = VlyClient::from_config(&self.settings);
         let (tx, rx) = mpsc::channel();
@@ -621,6 +649,20 @@ impl App {
             }
         }
 
+        if let Some(rx) = &self.models_job {
+            if let Ok(result) = rx.try_recv() {
+                self.models_note = Some(match result {
+                    Ok(list) => {
+                        let count = list.len();
+                        self.models = list;
+                        Ok(format!("Loaded {count} models from the gateway."))
+                    }
+                    Err(error) => Err(error),
+                });
+                self.models_job = None;
+            }
+        }
+
         if let Some(rx) = &self.build_job {
             if let Ok(result) = rx.try_recv() {
                 self.build_result = Some(result);
@@ -628,7 +670,11 @@ impl App {
             }
         }
 
-        if self.gen.is_some() || self.build_job.is_some() || self.connect_test.is_some() {
+        if self.gen.is_some()
+            || self.build_job.is_some()
+            || self.connect_test.is_some()
+            || self.models_job.is_some()
+        {
             ctx.request_repaint_after(Duration::from_millis(120));
         } else {
             ctx.request_repaint_after(Duration::from_millis(900));
